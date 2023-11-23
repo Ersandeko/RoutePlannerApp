@@ -1,61 +1,104 @@
-import { useState } from 'react';
-import RouteForm from './RouteForm'
-import Map from './Map'
-import axios from 'axios';
 
-const App = () => {
-  const [directions, setDirections] = useState(null);
+import { useState, useRef } from 'react';
+import {
+  Box,
+ 
+  Flex,
+  HStack,
+  IconButton,
 
-  const handleShowRoute = async ({ origin, destination, stops }) => {
-    try {
-      // Convert addresses to coordinates using Geocoding API
-      const originCoords = await getCoordinates(origin);
-      const destinationCoords = await getCoordinates(destination);
-      const stopCoords = await Promise.all(stops.map((stop) => getCoordinates(stop)));
-  
-      // Calculate directions using Directions API
-      await getDirections(originCoords, destinationCoords, stopCoords);
-  
-      // Extract routes from the response
-      const routes = directions ? directions.routes : null;
-  
-      // Update state with directions
-      setDirections(routes);
-    } catch (error) {
-      console.error('Error fetching directions:', error);
-      // Handle error, show user-friendly message, etc.
+  SkeletonText,
+  Text,
+} from '@chakra-ui/react';
+import { FaLocationArrow } from 'react-icons/fa';
+import { useJsApiLoader } from '@react-google-maps/api';
+import Map from './Map';
+import RouteForm from './RouteForm';
+
+const center = { lat: 42.4304, lng: 19.2594 };
+
+function App() {
+  const { isLoaded } = useJsApiLoader({
+    googleMapsApiKey: 'AIzaSyChFRHX-AzTVUsb6PaiCuCS6ZK6Ly4newY',
+    libraries: ['places'],
+  });
+
+  const [map] = useState(null);
+  const [directionsResponse, setDirectionsResponse] = useState(null);
+  const [distance, setDistance] = useState('');
+  const [duration, setDuration] = useState('');
+  const [stops, setStops] = useState([]);
+
+  const originRef = useRef();
+  const destiantionRef = useRef();
+
+  const addStop = (position) => {
+    setStops([...stops, position]);
+  };
+
+  if (!isLoaded) {
+    return <SkeletonText />;
+  }
+
+  const showRoute = async () => {
+    if (originRef.current.value === '' || destiantionRef.current.value === '') {
+      return;
     }
+
+    // eslint-disable-next-line no-undef
+    const directionsService = new google.maps.DirectionsService();
+    const results = await directionsService.route({
+      origin: originRef.current.value,
+      destination: destiantionRef.current.value,
+      // eslint-disable-next-line no-undef
+      travelMode: google.maps.TravelMode.DRIVING,
+    });
+
+    addStop(results.routes[0].legs[0].start_location);
+    addStop(results.routes[0].legs[0].end_location);
+
+    setDirectionsResponse(results);
+    setDistance(results.routes[0].legs[0].distance.text);
+    setDuration(results.routes[0].legs[0].duration.text);
   };
-  
 
-  const getCoordinates = async (address) => {
-    const response = await axios.get(
-      `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
-        address
-      )}&key=AIzaSyChFRHX-AzTVUsb6PaiCuCS6ZK6Ly4newY`
-    );
-    const location = response.data.results[0].geometry.location;
-    return { lat: location.lat, lng: location.lng };
-  };
-
-  const getDirections = async (origin, destination, stops) => {
-    const waypoints = stops.map((stop) => ({ location: stop, stopover: true }));
-
-    const response = await axios.get(
-      `https://maps.googleapis.com/maps/api/directions/json?origin=${origin.lat},${origin.lng}&destination=${destination.lat},${destination.lng}&waypoints=${waypoints
-        .map((waypoint) => `${waypoint.location.lat},${waypoint.location.lng}`)
-        .join('|')}&key=AIzaSyChFRHX-AzTVUsb6PaiCuCS6ZK6Ly4newY`
-    );
-
-    return response;
+  const clearRoute = () => {
+    setDirectionsResponse(null);
+    setDistance('');
+    setDuration('');
+    originRef.current.value = '';
+    destiantionRef.current.value = '';
   };
 
   return (
-    <div>
-      <RouteForm onShowRoute={handleShowRoute} />
-      <Map directions={directions} />
-    </div>
+    <Flex position='relative' flexDirection='column' alignItems='center' h='100vh' w='100vw'>
+      <Box position='absolute' left={0} top={0} h='100%' w='100%'>
+        <Map center={center} directionsResponse={directionsResponse} stops={stops} />
+      </Box>
+      <Box p={4} borderRadius='lg' m={4} bgColor='white' shadow='base' minW='container.md' zIndex='1'>
+        <RouteForm
+          showRoute={showRoute}
+          clearRoute={clearRoute}
+          originRef={originRef}
+          destiantionRef={destiantionRef}
+          addStop={addStop}
+        />
+        <HStack spacing={4} mt={4} justifyContent='space-between'>
+          <Text>Distance: {distance} </Text>
+          <Text>Duration: {duration} </Text>
+          <IconButton
+            aria-label='center back'
+            icon={<FaLocationArrow />}
+            isRound
+            onClick={() => {
+              map.panTo(center);
+              map.setZoom(15);
+            }}
+          />
+        </HStack>
+      </Box>
+    </Flex>
   );
-};
+}
 
 export default App;
